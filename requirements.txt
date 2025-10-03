@@ -1,0 +1,5 @@
+python-dotenv
+base58
+ecdsa
+requests
+pybloom_live
