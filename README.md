@@ -15,8 +15,8 @@ This project is an experimental Python script that:
 
 ### 1. Clone the repository
 
-git clone https://github.com/your-username/mnemonic-wallet-scanner.git
-cd mnemonic-wallet-scanner
+git clone https://github.com/fh0enix/BIP.git
+cd BIP
 2. Create and activate a virtual environment
 
 
