@@ -17,8 +17,8 @@ This project is an experimental Python script that:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/mnemonic-wallet-scanner.git
-cd mnemonic-wallet-scanner
+git clone https://github.com/fh0enix/BIP.git
+cd BIP
 ```
 
 ### 2. Create and activate a virtual environment
@@ -167,5 +167,3 @@ Thumbs.db
 * [ ] Replace naive mnemonic→privkey (sha256 of text) with proper BIP39/BIP32 where appropriate for legitimate use cases
 
 ---
-
-If you plan to publish this repo publicly, please ensure the Bloom filter and english wordlist licensing allows redistribution and remove any sensitive data before pushing.
