@@ -82,7 +82,7 @@ TELEGRAM_CHAT_ID=your_chat_id
 ## ▶️ Running the Script
 
 ```bash
-python main.py
+python bip_39.py
 ```
 
 Behavior:
